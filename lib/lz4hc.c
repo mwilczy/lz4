@@ -1536,6 +1536,25 @@ static int isStateCompatible(const LZ4HC_CCtx_internal* ctx1, const LZ4HC_CCtx_i
     return !(isMid1 ^ isMid2);
 }
 
+/* LZ4_DICT_ATTACH=0 : the attached dictionary's tables can't be copied
+ * (levels 1-2 and 3+ lay them out differently), so index the dictionary
+ * into the working context instead, as LZ4_loadDictHC() does. */
+static void LZ4HC_indexDictCtx(LZ4HC_CCtx_internal* ctx, const BYTE* src, int cLevel)
+{
+    const BYTE* const dictStart = ctx->dictCtx->prefixStart;
+    size_t const dictSize = (size_t)(ctx->dictCtx->end - dictStart);
+
+    ctx->dictCtx = NULL;
+    LZ4HC_clearTables(ctx);
+    LZ4HC_init_internal(ctx, dictStart);
+    ctx->end = dictStart + dictSize;
+    if (LZ4HC_getCLevelParams(cLevel).strat == lz4mid)
+        LZ4MID_fillHTable(ctx, dictStart, dictSize);
+    else if (dictSize >= LZ4HC_HASHSIZE)
+        LZ4HC_Insert(ctx, ctx->end-3);
+    LZ4HC_setExternalDict(ctx, src);
+}
+
 static int
 LZ4HC_compress_generic_dictCtx (
         LZ4HC_CCtx_internal* const ctx,
@@ -1552,7 +1571,9 @@ LZ4HC_compress_generic_dictCtx (
     if (position >= 64 KB) {
         ctx->dictCtx = NULL;
         return LZ4HC_compress_generic_noDictCtx(ctx, src, dst, srcSizePtr, dstCapacity, cLevel, limit);
-    } else if (position == 0 && *srcSizePtr >= LZ4HC_getCLevelParams(cLevel).dictCopyMin && isStateCompatible(ctx, ctx->dictCtx)) {
+    } else if (position == 0
+            && (!LZ4_DICT_ATTACH || *srcSizePtr >= LZ4HC_getCLevelParams(cLevel).dictCopyMin)
+            && isStateCompatible(ctx, ctx->dictCtx)) {
         /* parameters and extension belong to the working context, not to the dictionary */
         LZ4_i8 const favorDecSpeed = ctx->favorDecSpeed;
         LZ4_i8 const hasWorkspace = ctx->hasWorkspace;
@@ -1562,8 +1583,11 @@ LZ4HC_compress_generic_dictCtx (
         ctx->favorDecSpeed = favorDecSpeed;
         ctx->hasWorkspace = hasWorkspace;
         return LZ4HC_compress_generic_noDictCtx(ctx, src, dst, srcSizePtr, dstCapacity, cLevel, limit);
-    } else {
+    } else if (LZ4_DICT_ATTACH) {
         return LZ4HC_compress_generic_internal(ctx, src, dst, srcSizePtr, dstCapacity, cLevel, limit, usingDictCtxHc);
+    } else {
+        LZ4HC_indexDictCtx(ctx, (const BYTE*)src, cLevel);
+        return LZ4HC_compress_generic_noDictCtx(ctx, src, dst, srcSizePtr, dstCapacity, cLevel, limit);
     }
 }
 

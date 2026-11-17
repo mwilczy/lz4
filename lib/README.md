@@ -141,6 +141,12 @@ The following build macro can be selected to adjust source code behavior at comp
   in stack (0), or in heap (1:default).
   Since workspace is rather large, stack can be inconvenient, hence heap mode is recommended.
 
+- `LZ4_DICT_ATTACH` : by setting this build macro to 0, a dictionary attached with
+  `LZ4_attach_dictionary()` or `LZ4_attach_HC_dictionary()` is copied into the working state
+  on first use instead of being searched in place, and the in-place search isn't compiled.
+  Output stays valid and still uses the dictionary.
+  Default is 1. Meant for builds that don't attach dictionaries and care about code size.
+
 - `LZ4F_HEAPMODE` : selects how `LZ4F_compressFrame()` allocates the compression state,
   either on stack (default, value 0) or using heap memory (value 1).
 

@@ -239,6 +239,7 @@ test-unittest-configs:
 	$(MAKE) clean; CFLAGS=-O2 CPPFLAGS=-D'LZ4_MEMORY_USAGE=LZ4_MEMORY_USAGE_MIN' $(MAKE) all && ./unittest -r
 	$(MAKE) clean; CFLAGS=-O2 CPPFLAGS=-D'LZ4_MEMORY_USAGE=LZ4_MEMORY_USAGE_MAX' $(MAKE) all && ./unittest -r
 	$(MAKE) clean; CFLAGS=-O2 CPPFLAGS=-D'LZ4_DISTANCE_MAX=8000' $(MAKE) unittest && ./unittest -r
+	$(MAKE) clean; CFLAGS=-O2 CPPFLAGS=-D'LZ4_DICT_ATTACH=0' $(MAKE) unittest fuzzer && ./unittest -r && ./fuzzer -T15s
 
 # called by CI (job memory-usage)
 .PHONY: test-compile-with-lz4-memory-usage

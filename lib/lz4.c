@@ -45,6 +45,20 @@
 #  define LZ4_HEAPMODE 0
 #endif
 
+/*
+ * LZ4_DICT_ATTACH :
+ * Select whether compression can search a dictionary attached with
+ * LZ4_attach_dictionary() or LZ4_attach_HC_dictionary() in place (1:default).
+ * At 0, the attached dictionary's state is copied into the working state
+ * on first use, as is already done for inputs above a size threshold :
+ * output stays valid and uses the dictionary, and the in-place search
+ * paths aren't compiled. Meant for builds that don't attach dictionaries
+ * and care about code size.
+ */
+#ifndef LZ4_DICT_ATTACH
+#  define LZ4_DICT_ATTACH 1
+#endif
+
 
 /*-************************************
 *  CPU Feature Detection
@@ -1917,7 +1931,7 @@ int LZ4_compress_fast_continue (LZ4_stream_t* LZ4_stream,
              * dictCtx->currentOffset - dictCtx->dictSize. This makes it safe
              * to use noDictIssue even when the dict isn't a full 64 KB.
              */
-            if (inputSize >= LZ4_DICTCTX_COPY_THRESHOLD) {
+            if (!LZ4_DICT_ATTACH || inputSize >= LZ4_DICTCTX_COPY_THRESHOLD) {
                 /* For compressing large blobs, it is faster to pay the setup
                  * cost to copy the dictionary's tables into the active context,
                  * so that the compression loop is only looking into one table.
