@@ -78,7 +78,9 @@
 
 
 /*===   Enums   ===*/
-typedef enum { noDictCtx, usingDictCtxHc } dictCtx_directive;
+/* noExtDictHc : no dictCtx, and no external dictionary either (lowLimit == dictLimit) :
+ * every candidate is within the prefix, so the match search leaves out the external dictionary code. */
+typedef enum { noDictCtx, usingDictCtxHc, noExtDictHc } dictCtx_directive;
 
 
 /*===   Constants   ===*/
@@ -1093,6 +1095,7 @@ LZ4HC_InsertAndGetWiderMatch (
         int matchLength=0;
         nbAttempts--;
         assert(matchIndex < ipIndex);
+        assert(dict != noExtDictHc || matchIndex >= prefixIdx);
         if (favorDecSpeed && (ipIndex - matchIndex < 8)) {
             /* do nothing:
              * favorDecSpeed intentionally skips matches with offset < 8 */
@@ -1112,7 +1115,7 @@ LZ4HC_InsertAndGetWiderMatch (
                         DEBUGLOG(7, "Found match of len=%i within prefix, offset=%i, back=%i", longest, offset, -back);
                         HEX_CMP(7, ip + back, ip + back - offset, (size_t)matchLength);
             }   }   }
-        } else {   /* lowestMatchIndex <= matchIndex < dictLimit : within Ext Dict */
+        } else if (dict != noExtDictHc) {   /* lowestMatchIndex <= matchIndex < dictLimit : within Ext Dict */
             const BYTE* const matchPtr = dictStart + (matchIndex - dictIdx);
             assert(matchIndex >= dictIdx);
             if ( likely(matchIndex <= prefixIdx - 4)
@@ -1484,7 +1487,12 @@ LZ4HC_compress_generic_internal (
                                 src, dst, srcSizePtr, dstCapacity,
                                 limit, dict);
         } else if (cParam.strat == lz4hc) {
-            result = LZ4HC_compress_hashChain(ctx,
+            if (dict == noDictCtx && ctx->lowLimit == ctx->dictLimit)
+                result = LZ4HC_compress_hashChain(ctx,
+                                src, dst, srcSizePtr, dstCapacity,
+                                cParam.nbSearches, limit, noExtDictHc);
+            else
+                result = LZ4HC_compress_hashChain(ctx,
                                 src, dst, srcSizePtr, dstCapacity,
                                 cParam.nbSearches, limit, dict);
         } else {
