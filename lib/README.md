@@ -141,6 +141,14 @@ The following build macro can be selected to adjust source code behavior at comp
   in stack (0), or in heap (1:default).
   Since workspace is rather large, stack can be inconvenient, hence heap mode is recommended.
 
+- `LZ4HC_PATTERN_ANALYSIS` : by setting this build macro to 0, levels 9+ don't look for runs
+  of a repeated byte to jump over. Its code sits in the match search of levels 3 and up :
+  leaving it out makes lz4hc.o 11-15 KB smaller, the lower levels up to 5% faster, and
+  levels 9-10 5-30% faster on binaries and text (gcc 15 and clang 21, x86-64). Inputs with
+  long runs then compress up to 22 times slower at levels 9-12 and up to 7% larger, and
+  level 12 compresses text up to 18% slower. Levels 1-8 produce the same output either way.
+  Default is 1.
+
 - `LZ4F_HEAPMODE` : selects how `LZ4F_compressFrame()` allocates the compression state,
   either on stack (default, value 0) or using heap memory (value 1).
 
