@@ -78,7 +78,9 @@
 
 
 /*===   Enums   ===*/
-typedef enum { noDictCtx, usingDictCtxHc } dictCtx_directive;
+/* noExtDictHc : no dictCtx, and no external dictionary either (lowLimit == dictLimit) :
+ * every candidate is within the prefix, so the match search leaves out the external dictionary code. */
+typedef enum { noDictCtx, usingDictCtxHc, noExtDictHc } dictCtx_directive;
 
 
 /*===   Constants   ===*/
@@ -1088,15 +1090,19 @@ LZ4HC_InsertAndGetWiderMatch (
                 ipIndex, matchIndex, lowestMatchIndex);
 
     /* Candidates only replace the current match if strictly longer,
-     * so stopping once @longest reaches @maxLength doesn't change the result. */
-    while ((matchIndex>=lowestMatchIndex) && (nbAttempts>0) && (longest<maxLength)) {
+     * so stopping once @longest reaches @maxLength doesn't change the result.
+     * Without a dictionary, the same test on pointers keeps one variable less
+     * live in the hash chain search. */
+    while ((matchIndex>=lowestMatchIndex) && (nbAttempts>0)
+        && (dict == noExtDictHc ? iLowLimit + longest < iHighLimit : longest < maxLength)) {
         int matchLength=0;
         nbAttempts--;
         assert(matchIndex < ipIndex);
+        assert(dict != noExtDictHc || matchIndex >= prefixIdx);
         if (favorDecSpeed && (ipIndex - matchIndex < 8)) {
             /* do nothing:
              * favorDecSpeed intentionally skips matches with offset < 8 */
-        } else if (matchIndex >= prefixIdx) {   /* within current Prefix */
+        } else if (dict == noExtDictHc || matchIndex >= prefixIdx) {   /* within current Prefix */
             const BYTE* const matchPtr = prefixPtr + (matchIndex - prefixIdx);
             assert(matchPtr < ip);
             assert(longest >= 1);
@@ -1112,7 +1118,7 @@ LZ4HC_InsertAndGetWiderMatch (
                         DEBUGLOG(7, "Found match of len=%i within prefix, offset=%i, back=%i", longest, offset, -back);
                         HEX_CMP(7, ip + back, ip + back - offset, (size_t)matchLength);
             }   }   }
-        } else {   /* lowestMatchIndex <= matchIndex < dictLimit : within Ext Dict */
+        } else if (dict != noExtDictHc) {   /* lowestMatchIndex <= matchIndex < dictLimit : within Ext Dict */
             const BYTE* const matchPtr = dictStart + (matchIndex - dictIdx);
             assert(matchIndex >= dictIdx);
             if ( likely(matchIndex <= prefixIdx - 4)
@@ -1443,6 +1449,26 @@ _dest_overflow:
 }
 
 
+/* The hash chain compressor, once without an external dictionary and once for the
+ * other cases, each out of line : inlined into LZ4HC_compress_generic_internal(),
+ * compilers instantiate it per call site and directive (clang : 2 to 3 times), and
+ * its search loop's register allocation then varies with the surrounding code. */
+LZ4_FORCE_NOINLINE int
+LZ4HC_compress_hashChain_noExtDict(LZ4HC_CCtx_internal* const ctx,
+    const char* const src, char* const dst, int* const srcSizePtr, int const maxOutputSize,
+    int const maxNbAttempts, const limitedOutput_directive limit)
+{
+    return LZ4HC_compress_hashChain(ctx, src, dst, srcSizePtr, maxOutputSize, maxNbAttempts, limit, noExtDictHc);
+}
+
+LZ4_FORCE_NOINLINE int
+LZ4HC_compress_hashChain_anyDict(LZ4HC_CCtx_internal* const ctx,
+    const char* const src, char* const dst, int* const srcSizePtr, int const maxOutputSize,
+    int const maxNbAttempts, const limitedOutput_directive limit, const dictCtx_directive dict)
+{
+    return LZ4HC_compress_hashChain(ctx, src, dst, srcSizePtr, maxOutputSize, maxNbAttempts, limit, dict);
+}
+
 static int LZ4HC_compress_optimal( LZ4HC_CCtx_internal* ctx,
     const char* const source, char* dst,
     int* srcSizePtr, int dstCapacity,
@@ -1484,7 +1510,12 @@ LZ4HC_compress_generic_internal (
                                 src, dst, srcSizePtr, dstCapacity,
                                 limit, dict);
         } else if (cParam.strat == lz4hc) {
-            result = LZ4HC_compress_hashChain(ctx,
+            if (dict == noDictCtx && ctx->lowLimit == ctx->dictLimit)
+                result = LZ4HC_compress_hashChain_noExtDict(ctx,
+                                src, dst, srcSizePtr, dstCapacity,
+                                cParam.nbSearches, limit);
+            else
+                result = LZ4HC_compress_hashChain_anyDict(ctx,
                                 src, dst, srcSizePtr, dstCapacity,
                                 cParam.nbSearches, limit, dict);
         } else {
